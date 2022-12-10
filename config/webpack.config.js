@@ -2,7 +2,7 @@
  * @Author: fdhou
  * @Date: 2022-12-06 14:50:19
  * @LastEditors: fdhou
- * @LastEditTime: 2022-12-09 17:51:25
+ * @LastEditTime: 2022-12-10 13:06:03
  * @Description: 开发环境和生产环境配置合并
  */
 
@@ -16,6 +16,9 @@ const ImageMinimizerPlugin = require("image-minimizer-webpack-plugin");
 const CopyPlugin = require("copy-webpack-plugin");
 const { DefinePlugin } = require('webpack')
 const { VueLoaderPlugin } = require('vue-loader')
+const AutoImport = require('unplugin-auto-import/webpack')
+const Components = require('unplugin-vue-components/webpack')
+const { ElementPlusResolver } = require('unplugin-vue-components/resolvers')
 
 // 获取cross-env定义的环境变量
 const isProduction = process.env.NODE_ENV === 'production'
@@ -34,7 +37,12 @@ const getStyleLoaders = (preProcessor) => {
         },
       },
     },
-    preProcessor,
+    preProcessor && {
+      loader: preProcessor,
+      options: preProcessor === 'sass-loader' ? {
+        additionalData: `@use "@/styles/element/index.scss" as *;`,
+      } : {}
+    }
   ].filter(Boolean);
 };
 module.exports = {
@@ -100,7 +108,11 @@ module.exports = {
       },
       {
         test: /\.vue$/,
-        loader: 'vue-loader'
+        loader: 'vue-loader',
+        options: {
+          // 开启缓存
+          cacheDirectory: path.resolve(__dirname, '../node-moudels/vue-loader')
+        }
       }
     ]
   },
@@ -138,11 +150,40 @@ module.exports = {
     new DefinePlugin({
       __VUE_OPTIONS_API__: true,
       __VUE_PROD_DEVTOOLS__: false
-    })
+    }),
+    // 按需加载element-plus
+    AutoImport({
+      resolvers: [ElementPlusResolver()],
+    }),
+    Components({
+      resolvers: [
+        ElementPlusResolver({
+          // 自定义主题引入sass
+          importStyle: 'sass'
+        })
+      ],
+    }),
   ].filter(Boolean),
   optimization: {
     splitChunks: {
       chunks: "all", // 代码分割
+      cacheGroups: {
+        vue: {
+          test: /[\\/]node_modules[\\/]vue(.*)[\\/]/,
+          name: 'vue-chunk',
+          priority: 40
+        },
+        elementPlus: {
+          test: /[\\/]node_modules[\\/]element-plus[\\/]/,
+          name: 'elementPlus-chunk',
+          priority: 30
+        },
+        libs: {
+          test: /[\\/]node_modules[\\/]/,
+          name: 'libs-chunk',
+          priority: 20
+        }
+      }
     },
     runtimeChunk: {
       name: (entrypoint) => `runtime~${entrypoint.name}`,
@@ -185,7 +226,10 @@ module.exports = {
   // webpack解析模块加载选项
   resolve: {
     // 自动补全扩展名
-    extensions: [".vue", ".js", ".json"]
+    extensions: [".vue", ".js", ".json"],
+    alias: {
+      "@": path.resolve(__dirname, '../src')
+    }
   },
   // 自动化配置
   devServer: {
@@ -195,4 +239,5 @@ module.exports = {
     hot: true, // 热模块替换
     historyApiFallback: true, // 解决react-router刷新404问题
   },
+  performance: false
 }
